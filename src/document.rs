@@ -1,7 +1,7 @@
-use decor::InternalString;
-use parser;
+use crate::decor::InternalString;
+use crate::parser;
+use crate::table::{Item, Iter, Table};
 use std::str::FromStr;
-use table::{Item, Iter, Table};
 
 /// Type representing a TOML document
 #[derive(Debug, Clone)]
@@ -15,7 +15,7 @@ pub struct Document {
 impl Default for Document {
     fn default() -> Self {
         Self {
-            root: Item::Table(Table::default()),
+            root: Item::Table(Table::with_pos(Some(0))),
             trailing: Default::default(),
         }
     }

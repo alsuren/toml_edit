@@ -1,9 +1,9 @@
-use array_of_tables::ArrayOfTables;
-use decor::{Decor, InternalString, Repr};
-use formatted::{decorated, key_repr};
-use key::Key;
+use crate::array_of_tables::ArrayOfTables;
+use crate::decor::{Decor, InternalString, Repr};
+use crate::formatted::{decorated, key_repr};
+use crate::key::Key;
+use crate::value::{sort_key_value_pairs, Array, DateTime, InlineTable, Value};
 use linked_hash_map::LinkedHashMap;
-use value::{sort_key_value_pairs, Array, DateTime, InlineTable, Value};
 
 // TODO: add method to convert a table into inline table
 
@@ -15,6 +15,9 @@ pub struct Table {
     pub(crate) decor: Decor,
     // whether to hide an empty table
     pub(crate) implicit: bool,
+    // used for putting tables back in their original order when serialising.
+    // Will be None when the Table wasn't parsed from a file.
+    pub(crate) position: Option<usize>,
 }
 
 pub(crate) type KeyValuePairs = LinkedHashMap<InternalString, TableKeyValue>;
@@ -53,17 +56,25 @@ impl TableKeyValue {
 }
 
 /// An iterator type over `Table`'s key/value pairs.
-pub type Iter<'a> = Box<Iterator<Item = (&'a str, &'a Item)> + 'a>;
+pub type Iter<'a> = Box<dyn Iterator<Item = (&'a str, &'a Item)> + 'a>;
 
 impl Table {
     /// Creates an empty table.
     pub fn new() -> Self {
-        Self::with_decor(Decor::new("\n", ""))
+        Self::with_decor_and_pos(Decor::new("\n", ""), None)
     }
 
-    pub(crate) fn with_decor(decor: Decor) -> Self {
+    pub(crate) fn with_pos(position: Option<usize>) -> Self {
+        Self {
+            position,
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn with_decor_and_pos(decor: Decor, position: Option<usize>) -> Self {
         Self {
             decor,
+            position,
             ..Default::default()
         }
     }
@@ -339,10 +350,10 @@ impl Item {
     }
 
     /// Casts `self` to either a table or an inline table.
-    pub fn as_table_like(&self) -> Option<&TableLike> {
+    pub fn as_table_like(&self) -> Option<&dyn TableLike> {
         self.as_table()
-            .map(|t| t as &TableLike)
-            .or_else(|| self.as_inline_table().map(|t| t as &TableLike))
+            .map(|t| t as &dyn TableLike)
+            .or_else(|| self.as_inline_table().map(|t| t as &dyn TableLike))
     }
 
     /// Returns true iff `self` is either a table, or an inline table.
@@ -386,6 +397,8 @@ impl TableLike for Table {
 /// # Examples
 /// ```rust
 /// # extern crate toml_edit;
+/// # extern crate pretty_assertions;
+/// # use pretty_assertions::assert_eq;
 /// # use toml_edit::*;
 /// # fn main() {
 /// let mut table = Table::default();

@@ -1,5 +1,5 @@
-#![cfg_attr(feature = "clippy", allow(clippy::unneeded_field_pattern))]
-#![cfg_attr(feature = "clippy", allow(clippy::toplevel_ref_arg))]
+#![allow(clippy::unneeded_field_pattern)]
+#![allow(clippy::toplevel_ref_arg)]
 
 #[macro_use]
 mod macros;
@@ -19,12 +19,13 @@ pub use self::errors::TomlError;
 pub(crate) use self::key::key as key_parser;
 pub(crate) use self::value::value as value_parser;
 
-use document::Document;
-use table::Table;
+use crate::document::Document;
+use crate::table::Table;
 
 pub struct TomlParser {
     document: Box<Document>,
     current_table: *mut Table,
+    current_table_position: usize,
 }
 
 impl Default for TomlParser {
@@ -34,16 +35,31 @@ impl Default for TomlParser {
         Self {
             document: doc,
             current_table: table,
+            current_table_position: 0,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::*;
     use combine::stream::state::State;
     use combine::*;
-    use parser::*;
+    use pretty_assertions::assert_eq;
     use std;
+    use std::fmt;
+    // Copied from https://github.com/colin-kiegel/rust-pretty-assertions/issues/24
+    /// Wrapper around string slice that makes debug output `{:?}` to print string same way as `{}`.
+    /// Used in different `assert*!` macros in combination with `pretty_assertions` crate to make
+    /// test failures to show nice diffs.
+    #[derive(PartialEq, Eq)]
+    struct PrettyString<'a>(pub &'a str);
+    /// Make diff to display string as multi-line string
+    impl<'a> fmt::Debug for PrettyString<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str(self.0)
+        }
+    }
 
     macro_rules! parsed_eq {
         ($parsed:ident, $expected:expr) => {{
@@ -462,7 +478,7 @@ that
             assert!(doc.is_ok());
             let doc = doc.unwrap();
 
-            assert_eq!(&doc.to_string(), document);
+            assert_eq!(PrettyString(document), PrettyString(&doc.to_string()));
         }
 
         let invalid_inputs = [r#" hello = 'darkness' # my old friend

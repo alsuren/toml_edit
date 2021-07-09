@@ -1,17 +1,17 @@
-use array_of_tables::ArrayOfTables;
+use crate::array_of_tables::ArrayOfTables;
+use crate::decor::{Decor, InternalString};
+use crate::key::Key;
+use crate::parser::errors::CustomError;
+use crate::parser::key::key;
+use crate::parser::trivia::{line_trailing, ws};
+use crate::parser::TomlParser;
+use crate::table::{Item, Table};
 use combine::char::char;
 use combine::range::range;
 use combine::stream::RangeStream;
 use combine::*;
-use decor::{Decor, InternalString};
-use key::Key;
-use parser::errors::CustomError;
-use parser::key::key;
-use parser::trivia::{line_trailing, ws};
-use parser::TomlParser;
 use std::cell::RefCell;
 use std::mem;
-use table::{Item, Table};
 // https://github.com/rust-lang/rust/issues/41358
 #[allow(unused_imports)]
 use std::ops::DerefMut;
@@ -71,10 +71,10 @@ parser! {
          Item = char>,
          I::Error: ParseError<char, &'a str, <I as StreamOnce>::Position>,
          <I::Error as ParseError<char, &'a str, <I as StreamOnce>::Position>>::StreamError:
-         From<::std::num::ParseIntError> +
-         From<::std::num::ParseFloatError> +
-         From<::chrono::ParseError> +
-         From<::parser::errors::CustomError>
+         From<std::num::ParseIntError> +
+         From<std::num::ParseFloatError> +
+         From<chrono::ParseError> +
+         From<crate::parser::errors::CustomError>
     ]    {
         array_table(parser)
             .or(std_table(parser))
@@ -130,6 +130,7 @@ impl TomlParser {
 
         let leading = mem::replace(&mut self.document.trailing, InternalString::new());
         let table = self.document.as_table_mut();
+        self.current_table_position += 1;
 
         let table = Self::descend_path(table, &path[..path.len() - 1], 0);
         let key = &path[path.len() - 1];
@@ -140,7 +141,10 @@ impl TomlParser {
 
                 let entry = table.entry(key.raw());
                 if entry.is_none() {
-                    *entry = Item::Table(Table::with_decor(decor));
+                    *entry = Item::Table(Table::with_decor_and_pos(
+                        decor,
+                        Some(self.current_table_position),
+                    ));
                     self.current_table = entry.as_table_mut().unwrap();
                     return Ok(());
                 }
@@ -149,6 +153,7 @@ impl TomlParser {
                     Item::Table(ref mut t) if t.implicit => {
                         debug_assert!(t.values_len() == 0);
                         t.decor = decor;
+                        t.position = Some(self.current_table_position);
                         t.set_implicit(false);
                         self.current_table = t;
                         return Ok(());
@@ -179,7 +184,12 @@ impl TomlParser {
                         .entry(key.raw())
                         .or_insert(Item::ArrayOfTables(ArrayOfTables::new()));
                     let array = entry.as_array_of_tables_mut().unwrap();
-                    self.current_table = array.append(Table::with_decor(decor));
+
+                    self.current_table_position += 1;
+                    self.current_table = array.append(Table::with_decor_and_pos(
+                        decor,
+                        Some(self.current_table_position),
+                    ));
 
                     Ok(())
                 } else {
